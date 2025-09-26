@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: messageboard_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: messageboard
+      MYSQL_USER: mbuser
+      MYSQL_PASSWORD: mbpassword
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    networks:
+      - messageboard_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  app:
+    build: .
+    container_name: messageboard_app
+    environment:
+      DATABASE_URL: mysql://mbuser:mbpassword@mysql:3306/messageboard
+      JWT_SECRET: your-production-secret-key-please-change-this
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8080
+      RUST_LOG: info
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - messageboard_network
+
+volumes:
+  mysql_data:
+
+networks:
+  messageboard_network:
+    driver: bridge

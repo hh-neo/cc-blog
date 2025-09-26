@@ -1,11 +1,11 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use sqlx::FromRow;
 use validator::Validate;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct User {
-    pub id: Uuid,
+    pub id: String,
     pub username: String,
     pub email: String,
     pub password_hash: String,
@@ -13,9 +13,25 @@ pub struct User {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
+pub struct RegisterInput {
+    #[validate(length(min = 3, max = 50))]
+    pub username: String,
+    #[validate(email)]
+    pub email: String,
+    #[validate(length(min = 6))]
+    pub password: String,
+}
+
+#[derive(Debug, Deserialize, Validate)]
+pub struct LoginInput {
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Debug, Serialize)]
 pub struct UserResponse {
-    pub id: Uuid,
+    pub id: String,
     pub username: String,
     pub email: String,
     pub created_at: DateTime<Utc>,
@@ -23,7 +39,7 @@ pub struct UserResponse {
 
 impl From<User> for UserResponse {
     fn from(user: User) -> Self {
-        Self {
+        UserResponse {
             id: user.id,
             username: user.username,
             email: user.email,
@@ -32,33 +48,8 @@ impl From<User> for UserResponse {
     }
 }
 
-#[derive(Debug, Deserialize, Validate)]
-pub struct CreateUserRequest {
-    #[validate(length(min = 3, max = 50, message = "用户名长度必须在3-50字符之间"))]
-    pub username: String,
-    #[validate(email(message = "邮箱格式不正确"))]
-    pub email: String,
-    #[validate(length(min = 6, message = "密码长度至少6个字符"))]
-    pub password: String,
-}
-
-#[derive(Debug, Deserialize, Validate)]
-pub struct LoginRequest {
-    #[validate(length(min = 1, message = "用户名不能为空"))]
-    pub username: String,
-    #[validate(length(min = 1, message = "密码不能为空"))]
-    pub password: String,
-}
-
 #[derive(Debug, Serialize)]
 pub struct AuthResponse {
     pub user: UserResponse,
     pub token: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Claims {
-    pub sub: String, // user id
-    pub username: String,
-    pub exp: usize,
 }

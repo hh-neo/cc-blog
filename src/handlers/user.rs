@@ -1,71 +1,140 @@
-use crate::auth::create_jwt;
-use crate::config::Config;
-use crate::database::{DbPool, UserRepository};
-use crate::errors::AppError;
-use crate::models::{AuthResponse, CreateUserRequest, LoginRequest, UserResponse};
-use axum::{extract::State, Json};
+use actix_web::{web, HttpMessage, HttpRequest, HttpResponse};
+use bcrypt::{hash, verify, DEFAULT_COST};
+use sqlx::{MySql, Pool, Row};
+use uuid::Uuid;
 use validator::Validate;
 
-#[derive(Clone)]
-pub struct AppState {
-    pub db: DbPool,
-    pub config: Config,
-}
+use crate::{
+    config::Config,
+    models::{AuthResponse, LoginInput, RegisterInput, User, UserResponse},
+    utils::{errors::AppError, jwt::{create_token, Claims}},
+};
 
 pub async fn register(
-    State(state): State<AppState>,
-    Json(request): Json<CreateUserRequest>,
-) -> Result<Json<AuthResponse>, AppError> {
-    request.validate()?;
+    pool: web::Data<Pool<MySql>>,
+    config: web::Data<Config>,
+    input: web::Json<RegisterInput>,
+) -> Result<HttpResponse, AppError> {
+    input.validate()
+        .map_err(|e| AppError::ValidationError(e.to_string()))?;
 
-    // Check if username already exists
-    if UserRepository::find_by_username(&state.db, &request.username)
-        .await?
-        .is_some()
-    {
-        return Err(AppError::Conflict("用户名已存在".to_string()));
+    let existing_user = sqlx::query(
+        "SELECT id FROM users WHERE username = ? OR email = ?"
+    )
+    .bind(&input.username)
+    .bind(&input.email)
+    .fetch_optional(pool.as_ref())
+    .await?;
+
+    if existing_user.is_some() {
+        return Err(AppError::BadRequest(
+            "Username or email already exists".to_string(),
+        ));
     }
 
-    // Check if email already exists
-    if UserRepository::find_by_email(&state.db, &request.email)
-        .await?
-        .is_some()
-    {
-        return Err(AppError::Conflict("邮箱已存在".to_string()));
-    }
+    let password_hash = hash(&input.password, DEFAULT_COST)
+        .map_err(|_| AppError::InternalServerError)?;
 
-    let user = UserRepository::create_user(&state.db, &request).await?;
-    let token = create_jwt(&user, &state.config)?;
+    let user_id = Uuid::new_v4().to_string();
+
+    sqlx::query(
+        "INSERT INTO users (id, username, email, password_hash) VALUES (?, ?, ?, ?)"
+    )
+    .bind(&user_id)
+    .bind(&input.username)
+    .bind(&input.email)
+    .bind(&password_hash)
+    .execute(pool.as_ref())
+    .await?;
+
+    let row = sqlx::query("SELECT * FROM users WHERE id = ?")
+        .bind(&user_id)
+        .fetch_one(pool.as_ref())
+        .await?;
+
+    let user = User {
+        id: row.get("id"),
+        username: row.get("username"),
+        email: row.get("email"),
+        password_hash: row.get("password_hash"),
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+    };
+
+    let token = create_token(&user.id, &user.username, &config.jwt_secret)?;
 
     let response = AuthResponse {
         user: UserResponse::from(user),
         token,
     };
 
-    Ok(Json(response))
+    Ok(HttpResponse::Created().json(response))
 }
 
 pub async fn login(
-    State(state): State<AppState>,
-    Json(request): Json<LoginRequest>,
-) -> Result<Json<AuthResponse>, AppError> {
-    request.validate()?;
+    pool: web::Data<Pool<MySql>>,
+    config: web::Data<Config>,
+    input: web::Json<LoginInput>,
+) -> Result<HttpResponse, AppError> {
+    input.validate()
+        .map_err(|e| AppError::ValidationError(e.to_string()))?;
 
-    let user = UserRepository::find_by_username(&state.db, &request.username)
+    let row = sqlx::query("SELECT * FROM users WHERE username = ?")
+        .bind(&input.username)
+        .fetch_optional(pool.as_ref())
         .await?
-        .ok_or_else(|| AppError::Unauthorized("用户名或密码错误".to_string()))?;
+        .ok_or(AppError::AuthenticationError)?;
 
-    let is_valid = UserRepository::verify_password(&request.password, &user.password_hash).await?;
+    let user = User {
+        id: row.get("id"),
+        username: row.get("username"),
+        email: row.get("email"),
+        password_hash: row.get("password_hash"),
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+    };
+
+    let is_valid = verify(&input.password, &user.password_hash)
+        .map_err(|_| AppError::InternalServerError)?;
+
     if !is_valid {
-        return Err(AppError::Unauthorized("用户名或密码错误".to_string()));
+        return Err(AppError::AuthenticationError);
     }
 
-    let token = create_jwt(&user, &state.config)?;
+    let token = create_token(&user.id, &user.username, &config.jwt_secret)?;
 
     let response = AuthResponse {
         user: UserResponse::from(user),
         token,
     };
 
-    Ok(Json(response))
+    Ok(HttpResponse::Ok().json(response))
+}
+
+pub async fn get_profile(
+    pool: web::Data<Pool<MySql>>,
+    req: HttpRequest,
+) -> Result<HttpResponse, AppError> {
+    let extensions = req.extensions();
+    let claims = extensions
+        .get::<Claims>()
+        .ok_or(AppError::AuthenticationError)?
+        .clone();
+
+    let row = sqlx::query("SELECT * FROM users WHERE id = ?")
+        .bind(&claims.sub)
+        .fetch_optional(pool.as_ref())
+        .await?
+        .ok_or(AppError::NotFound)?;
+
+    let user = User {
+        id: row.get("id"),
+        username: row.get("username"),
+        email: row.get("email"),
+        password_hash: row.get("password_hash"),
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+    };
+
+    Ok(HttpResponse::Ok().json(UserResponse::from(user)))
 }

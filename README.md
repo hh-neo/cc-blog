@@ -1,211 +1,288 @@
-# Gold 留言板项目
+# 留言板系统 (Message Board)
 
-基于 Rust Axum 框架构建的现代化留言板应用，支持 JWT 认证、MySQL 数据库和完整的 CRUD 操作。
-
-## ✅ 项目状态
-
-**当前状态**: 项目已完成，可以正常编译运行！
-
-- ✅ 编译通过
-- ✅ 所有功能实现完成
-- ✅ 提供启动脚本
-- ✅ 包含完整 API 测试
+一个使用 Rust + MySQL 构建的生产级留言板系统，包含用户认证和文章CRUD功能。
 
 ## 功能特性
 
-- 🔐 用户注册和登录（JWT 认证）
-- 📝 留言的增删改查操作
-- 🔒 基于 JWT 的 API 保护
-- 📊 分页和查询功能
-- 🚀 高性能 Axum Web 框架
-- 🛡️ 完善的错误处理和验证
+- 用户注册和登录
+- JWT 认证
+- 文章的增删改查 (CRUD)
+- 分页查询
+- 错误处理和日志记录
+- CORS 支持
+- 生产级配置
 
 ## 技术栈
 
-- **后端框架**: Axum 0.7
-- **数据库**: MySQL 8.0
-- **认证**: JWT (jsonwebtoken)
-- **密码加密**: bcrypt
-- **数据库层**: SQLx
-- **序列化**: Serde
-- **验证**: Validator
-- **日志**: Tracing
+- **后端框架**: Actix-Web 4.9
+- **数据库**: MySQL (通过 SQLx)
+- **认证**: JWT
+- **密码加密**: Bcrypt
+- **运行时**: Tokio
 
-## 快速启动
+## 前置要求
 
-### 方式1: 使用启动脚本（推荐）
+- Rust 1.70+
+- MySQL 5.7+ 或 8.0+
+- 安装了 cargo
 
-```bash
-# 如果已安装 MySQL
-./start.sh
+## 快速开始
 
-# 使用 Docker（推荐新用户）
-./start-docker.sh
-```
-
-### 方式2: 手动启动
-
-1. **启动 MySQL**:
-   ```bash
-   # 使用 Homebrew
-   brew services start mysql
-
-   # 或使用 Docker
-   docker run --name mysql-gold -e MYSQL_ROOT_PASSWORD=password -p 3306:3306 -d mysql:8.0
-   ```
-
-2. **创建数据库**:
-   ```sql
-   CREATE DATABASE gold_messageboard;
-   ```
-
-3. **运行数据库迁移**:
-   ```bash
-   mysql -u root -p gold_messageboard < migrations/001_create_users.sql
-   mysql -u root -p gold_messageboard < migrations/002_create_messages.sql
-   ```
-
-4. **启动项目**:
-   ```bash
-   cargo run
-   ```
-
-服务器将在 `http://127.0.0.1:3000` 启动。
-
-## API 接口
-
-### 认证相关
-- `POST /api/auth/register` - 用户注册
-- `POST /api/auth/login` - 用户登录
-
-### 留言相关
-- `GET /api/messages` - 获取留言列表（支持分页和用户筛选）
-- `GET /api/messages/:id` - 获取单条留言
-- `POST /api/messages` - 创建留言（需要认证）
-- `PUT /api/messages/:id` - 更新留言（需要认证）
-- `DELETE /api/messages/:id` - 删除留言（需要认证）
-
-## API 测试
-
-查看 [`API_TESTS.md`](./API_TESTS.md) 文件获取详细的 API 测试示例和脚本。
-
-### 快速测试
+### 1. 克隆项目
 
 ```bash
-# 1. 用户注册
-curl -X POST http://localhost:3000/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"username": "testuser", "email": "test@example.com", "password": "password123"}'
-
-# 2. 用户登录
-curl -X POST http://localhost:3000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username": "testuser", "password": "password123"}'
-
-# 3. 获取留言列表
-curl http://localhost:3000/api/messages
+git clone <repository-url>
+cd messageboard
 ```
 
-## 项目结构
+### 2. 设置数据库
 
-```
-src/
-├── auth/           # JWT 认证相关
-├── config/         # 配置管理
-├── database/       # 数据库连接和仓库层
-├── errors/         # 错误处理
-├── handlers/       # HTTP 请求处理器
-├── middleware/     # 中间件
-├── models/         # 数据模型
-├── routes.rs       # 路由配置
-└── main.rs         # 应用入口
+创建 MySQL 数据库并执行 schema:
 
-migrations/         # 数据库迁移脚本
-scripts/           # 启动脚本
-.env               # 环境变量配置
+```bash
+mysql -u root -p < schema.sql
 ```
 
-## 环境变量配置
+或者手动执行：
 
-创建或修改 `.env` 文件：
+```sql
+CREATE DATABASE IF NOT EXISTS messageboard CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE messageboard;
+
+-- 执行 schema.sql 中的表创建语句
+```
+
+### 3. 配置环境变量
+
+复制环境变量示例文件并修改配置：
+
+```bash
+cp .env.example .env
+```
+
+编辑 `.env` 文件：
 
 ```env
-# 数据库配置
-DATABASE_URL=mysql://root:password@localhost:3306/gold_messageboard
+# 数据库连接
+DATABASE_URL=mysql://username:password@localhost:3306/messageboard
+
+# JWT 密钥（生产环境请使用强密钥）
+JWT_SECRET=your-secret-key-change-in-production
 
 # 服务器配置
 SERVER_HOST=127.0.0.1
-SERVER_PORT=3000
-
-# JWT密钥 (生产环境请更换为随机生成的强密钥)
-JWT_SECRET=your-secret-key-change-this-in-production-env
+SERVER_PORT=8080
 
 # 日志级别
 RUST_LOG=info
 ```
 
-## 安全特性
+### 4. 编译和运行
 
-- 密码使用 bcrypt 加密存储
-- JWT Token 用于 API 认证
-- CORS 跨域支持
-- 输入验证和错误处理
-- SQL 注入防护（SQLx 参数化查询）
-- 用户只能修改/删除自己的留言
-
-## 开发和调试
-
+开发模式：
 ```bash
-# 检查代码
-cargo check
-
-# 运行测试
-cargo test
-
-# 格式化代码
-cargo fmt
-
-# 代码检查
-cargo clippy
+cargo run
 ```
 
-## 部署建议
+生产构建：
+```bash
+cargo build --release
+./target/release/messageboard
+```
 
-1. **生产环境配置**：
-   - 更改 JWT_SECRET 为强随机密钥
-   - 使用 HTTPS
-   - 配置数据库连接池
-   - 启用日志记录
+服务器将在 `http://127.0.0.1:8080` 启动
 
-2. **性能优化**：
-   - 配置数据库索引
-   - 使用 Redis 缓存
-   - 启用 gzip 压缩
+## API 文档
 
-3. **监控和日志**：
-   - 配置结构化日志
-   - 添加指标监控
-   - 错误追踪
+### 认证相关
 
-## 故障排除
+#### 注册
+```http
+POST /api/auth/register
+Content-Type: application/json
 
-### 编译错误
-- 确保使用 Rust 2021 edition 或更高版本
-- 运行 `cargo clean` 然后 `cargo build`
+{
+  "username": "testuser",
+  "email": "test@example.com",
+  "password": "password123"
+}
+```
 
-### 数据库连接错误
-- 检查 MySQL 服务是否运行
-- 验证 `.env` 文件中的数据库连接信息
-- 确保数据库 `gold_messageboard` 已创建
+#### 登录
+```http
+POST /api/auth/login
+Content-Type: application/json
 
-### 端口占用
-- 修改 `.env` 中的 `SERVER_PORT` 为其他端口
-- 或使用 `lsof -ti:3000 | xargs kill` 杀死占用进程
+{
+  "username": "testuser",
+  "password": "password123"
+}
+```
 
-## 贡献
+响应:
+```json
+{
+  "user": {
+    "id": "uuid",
+    "username": "testuser",
+    "email": "test@example.com",
+    "created_at": "2024-01-01T00:00:00Z"
+  },
+  "token": "jwt-token"
+}
+```
 
-欢迎提交 Issue 和 Pull Request！
+### 用户相关
 
-## 许可证
+#### 获取个人信息（需要认证）
+```http
+GET /api/user/profile
+Authorization: Bearer <jwt-token>
+```
 
-MIT License
+### 文章相关
+
+#### 获取文章列表
+```http
+GET /api/articles?page=1&per_page=10&user_id=<optional>
+```
+
+#### 获取单个文章
+```http
+GET /api/articles/{id}
+```
+
+#### 创建文章（需要认证）
+```http
+POST /api/articles
+Authorization: Bearer <jwt-token>
+Content-Type: application/json
+
+{
+  "title": "文章标题",
+  "content": "文章内容"
+}
+```
+
+#### 更新文章（需要认证，只能更新自己的文章）
+```http
+PUT /api/articles/{id}
+Authorization: Bearer <jwt-token>
+Content-Type: application/json
+
+{
+  "title": "新标题（可选）",
+  "content": "新内容（可选）"
+}
+```
+
+#### 删除文章（需要认证，只能删除自己的文章）
+```http
+DELETE /api/articles/{id}
+Authorization: Bearer <jwt-token>
+```
+
+### 健康检查
+```http
+GET /api/health
+```
+
+## 项目结构
+
+```
+messageboard/
+├── src/
+│   ├── config/        # 配置模块
+│   ├── handlers/      # 请求处理器
+│   ├── middleware/    # 中间件（认证等）
+│   ├── models/        # 数据模型
+│   ├── utils/         # 工具函数
+│   └── main.rs        # 程序入口
+├── schema.sql         # 数据库 Schema
+├── Cargo.toml         # 依赖配置
+├── .env.example       # 环境变量示例
+└── README.md          # 项目文档
+```
+
+## 测试
+
+运行测试（需要先配置测试数据库）：
+
+```bash
+cargo test
+```
+
+## 生产部署建议
+
+1. **使用强 JWT 密钥**: 生产环境中使用至少 32 字符的随机字符串作为 JWT_SECRET
+2. **数据库连接池**: 已配置，可根据负载调整 `max_connections`
+3. **HTTPS**: 使用反向代理（如 Nginx）配置 HTTPS
+4. **日志**: 配置适当的日志级别和日志收集
+5. **监控**: 添加应用监控和性能指标
+6. **备份**: 定期备份数据库
+
+## 使用 systemd 部署（Linux）
+
+创建 systemd 服务文件 `/etc/systemd/system/messageboard.service`:
+
+```ini
+[Unit]
+Description=Message Board Service
+After=network.target mysql.service
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/path/to/messageboard
+Environment="RUST_LOG=info"
+ExecStart=/path/to/messageboard/target/release/messageboard
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
+```
+
+启动服务：
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable messageboard
+sudo systemctl start messageboard
+```
+
+## 使用 Docker 部署
+
+创建 `Dockerfile`:
+
+```dockerfile
+FROM rust:1.75 as builder
+WORKDIR /app
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+RUN cargo build --release
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y libssl3 ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /app/target/release/messageboard /usr/local/bin/messageboard
+CMD ["messageboard"]
+```
+
+构建并运行：
+```bash
+docker build -t messageboard .
+docker run -d -p 8080:8080 --env-file .env messageboard
+```
+
+## 安全建议
+
+1. 定期更新依赖：`cargo update`
+2. 使用安全审计工具：`cargo audit`
+3. 限制 CORS 来源（生产环境不要使用 allow_any_origin）
+4. 实施速率限制
+5. 添加输入验证和清理
+6. 使用 HTTPS
+7. 定期轮换 JWT 密钥
+
+## License
+
+MIT

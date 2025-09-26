@@ -1,38 +1,78 @@
-use crate::auth::verify_jwt;
-use crate::handlers::user::AppState;
-use axum::{
-    extract::{Request, State},
-    http::{header::AUTHORIZATION, StatusCode},
-    middleware::Next,
-    response::Response,
+use actix_web::{
+    dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform},
+    Error, HttpMessage,
 };
+use futures_util::future::LocalBoxFuture;
+use std::future::{ready, Ready};
 
-pub async fn auth_middleware(
-    State(state): State<AppState>,
-    mut req: Request,
-    next: Next,
-) -> Result<Response, StatusCode> {
-    let auth_header = req
-        .headers()
-        .get(AUTHORIZATION)
-        .and_then(|header| header.to_str().ok());
+use crate::utils::jwt::verify_token;
 
-    let auth_header = match auth_header {
-        Some(header) => header,
-        None => return Err(StatusCode::UNAUTHORIZED),
-    };
+pub struct AuthMiddleware;
 
-    if !auth_header.starts_with("Bearer ") {
-        return Err(StatusCode::UNAUTHORIZED);
+impl<S, B> Transform<S, ServiceRequest> for AuthMiddleware
+where
+    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
+    S::Future: 'static,
+    B: 'static,
+{
+    type Response = ServiceResponse<B>;
+    type Error = Error;
+    type InitError = ();
+    type Transform = AuthMiddlewareService<S>;
+    type Future = Ready<Result<Self::Transform, Self::InitError>>;
+
+    fn new_transform(&self, service: S) -> Self::Future {
+        ready(Ok(AuthMiddlewareService { service }))
     }
+}
 
-    let token = &auth_header[7..];
+pub struct AuthMiddlewareService<S> {
+    service: S,
+}
 
-    match verify_jwt(token, &state.config) {
-        Ok(claims) => {
-            req.extensions_mut().insert(claims);
-            Ok(next.run(req).await)
-        }
-        Err(_) => Err(StatusCode::UNAUTHORIZED),
+impl<S, B> Service<ServiceRequest> for AuthMiddlewareService<S>
+where
+    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
+    S::Future: 'static,
+    B: 'static,
+{
+    type Response = ServiceResponse<B>;
+    type Error = Error;
+    type Future = LocalBoxFuture<'static, Result<Self::Response, Self::Error>>;
+
+    forward_ready!(service);
+
+    fn call(&self, req: ServiceRequest) -> Self::Future {
+        let auth_header = req
+            .headers()
+            .get("Authorization")
+            .and_then(|h| h.to_str().ok())
+            .map(|h| h.to_string());
+
+        let jwt_secret = std::env::var("JWT_SECRET")
+            .unwrap_or_else(|_| "your-secret-key-change-in-production".to_string());
+
+        let fut = self.service.call(req);
+
+        Box::pin(async move {
+            if let Some(auth_header) = auth_header {
+                if let Some(token) = auth_header.strip_prefix("Bearer ") {
+                    if let Ok(claims) = verify_token(token, &jwt_secret) {
+                        fut.await.map(|res| {
+                            res.request()
+                                .extensions_mut()
+                                .insert(claims);
+                            res
+                        })
+                    } else {
+                        fut.await
+                    }
+                } else {
+                    fut.await
+                }
+            } else {
+                fut.await
+            }
+        })
     }
 }
