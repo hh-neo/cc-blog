@@ -1,18 +1,38 @@
 # Rust
-/target
-Cargo.lock
+/target/
 **/*.rs.bk
+Cargo.lock
 
 # Environment
 .env
 .env.local
+.env.*.local
+
+# SSL certificates
+ssl/
+*.pem
+*.key
+*.crt
 
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
+*~
+
+# OS
 .DS_Store
+Thumbs.db
 
 # Logs
 *.log
+logs/
+
+# Database
+*.sql.bak
+mysql_data/
+
+# Testing
+test-results/
+coverage/
