@@ -1,1 +1,31 @@
-*/target
+# 标准Rust项目的.gitignore文件
+
+# 编译输出目录
+target/
+# 临时文件
+*.tmp
+*.temp
+# 编辑器配置文件
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+# 环境变量文件
+.env
+.env.local
+.env.production
+# 日志文件
+*.log
+# OS生成的文件
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Added by cargo
+
+/target
