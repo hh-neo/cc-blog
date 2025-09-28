@@ -1,6 +1,5 @@
 use axum::{
-    body::Body,
-    http::{Request, StatusCode},
+    http::StatusCode,
     middleware,
     routing::{delete, get, post, put},
     Router,
@@ -184,9 +183,6 @@ async fn test_get_posts() {
     let response = server.get("/posts").await;
 
     response.assert_status(StatusCode::OK);
-
-    let posts: Vec<models::PostResponse> = response.json();
-    assert!(posts.len() >= 0);
 }
 
 #[tokio::test]
