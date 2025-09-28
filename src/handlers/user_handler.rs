@@ -1,95 +1,136 @@
-use crate::auth::create_jwt;
+use axum::{extract::State, http::StatusCode, Json};
+use validator::Validate;
+
+use crate::auth::{create_token, hash_password, verify_password};
 use crate::db::DbPool;
-use crate::models::{AuthResponse, LoginRequest, RegisterRequest, User, UserResponse};
-use actix_web::{web, HttpResponse, Result};
-use bcrypt::{hash, verify, DEFAULT_COST};
+use crate::models::{AuthResponse, ErrorResponse, LoginRequest, RegisterRequest, User, UserResponse};
 
 pub async fn register(
-    pool: web::Data<DbPool>,
-    req: web::Json<RegisterRequest>,
-) -> Result<HttpResponse> {
-    let password_hash = hash(&req.password, DEFAULT_COST)
-        .map_err(|e| actix_web::error::ErrorInternalServerError(e))?;
+    State(pool): State<DbPool>,
+    Json(payload): Json<RegisterRequest>,
+) -> Result<Json<AuthResponse>, (StatusCode, Json<ErrorResponse>)> {
+    if let Err(errors) = payload.validate() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse::new(format!("Validation error: {}", errors))),
+        ));
+    }
+
+    let existing_user: Option<(i32,)> =
+        sqlx::query_as("SELECT id FROM users WHERE username = ? OR email = ?")
+            .bind(&payload.username)
+            .bind(&payload.email)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse::new(format!("Database error: {}", e))),
+                )
+            })?;
+
+    if existing_user.is_some() {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ErrorResponse::new("Username or email already exists")),
+        ));
+    }
+
+    let password_hash = hash_password(&payload.password).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::new(format!("Password hashing error: {}", e))),
+        )
+    })?;
 
     let result = sqlx::query(
         "INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)"
     )
-    .bind(&req.username)
-    .bind(&req.email)
+    .bind(&payload.username)
+    .bind(&payload.email)
     .bind(&password_hash)
-    .execute(pool.get_ref())
-    .await;
+    .execute(&pool)
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::new(format!("Database error: {}", e))),
+        )
+    })?;
 
-    match result {
-        Ok(result) => {
-            let user_id = result.last_insert_id() as i32;
+    let user_id = result.last_insert_id() as i32;
 
-            let user = sqlx::query_as::<_, UserResponse>(
-                "SELECT id, username, email, created_at FROM users WHERE id = ?"
-            )
-            .bind(user_id)
-            .fetch_one(pool.get_ref())
-            .await
-            .map_err(|e| actix_web::error::ErrorInternalServerError(e))?;
+    let token = create_token(user_id, &payload.username).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::new(format!("Token creation error: {}", e))),
+        )
+    })?;
 
-            let token = create_jwt(user_id, &req.username)
-                .map_err(|e| actix_web::error::ErrorInternalServerError(e))?;
-
-            Ok(HttpResponse::Created().json(AuthResponse { token, user }))
-        }
-        Err(sqlx::Error::Database(db_err)) => {
-            if db_err.message().contains("Duplicate entry") {
-                Ok(HttpResponse::Conflict().json(serde_json::json!({
-                    "error": "Username or email already exists"
-                })))
-            } else {
-                Err(actix_web::error::ErrorInternalServerError(db_err))
-            }
-        }
-        Err(e) => Err(actix_web::error::ErrorInternalServerError(e)),
-    }
+    Ok(Json(AuthResponse {
+        token,
+        user: UserResponse {
+            id: user_id,
+            username: payload.username,
+            email: payload.email,
+        },
+    }))
 }
 
 pub async fn login(
-    pool: web::Data<DbPool>,
-    req: web::Json<LoginRequest>,
-) -> Result<HttpResponse> {
-    let user = sqlx::query_as::<_, User>(
-        "SELECT * FROM users WHERE username = ?"
-    )
-    .bind(&req.username)
-    .fetch_optional(pool.get_ref())
-    .await
-    .map_err(|e| actix_web::error::ErrorInternalServerError(e))?;
-
-    match user {
-        Some(user) => {
-            let valid = verify(&req.password, &user.password_hash)
-                .map_err(|e| actix_web::error::ErrorInternalServerError(e))?;
-
-            if valid {
-                let token = create_jwt(user.id, &user.username)
-                    .map_err(|e| actix_web::error::ErrorInternalServerError(e))?;
-
-                let user_response = UserResponse {
-                    id: user.id,
-                    username: user.username,
-                    email: user.email,
-                    created_at: user.created_at,
-                };
-
-                Ok(HttpResponse::Ok().json(AuthResponse {
-                    token,
-                    user: user_response,
-                }))
-            } else {
-                Ok(HttpResponse::Unauthorized().json(serde_json::json!({
-                    "error": "Invalid credentials"
-                })))
-            }
-        }
-        None => Ok(HttpResponse::Unauthorized().json(serde_json::json!({
-            "error": "Invalid credentials"
-        }))),
+    State(pool): State<DbPool>,
+    Json(payload): Json<LoginRequest>,
+) -> Result<Json<AuthResponse>, (StatusCode, Json<ErrorResponse>)> {
+    if let Err(errors) = payload.validate() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse::new(format!("Validation error: {}", errors))),
+        ));
     }
+
+    let user: Option<User> = sqlx::query_as::<_, User>(
+        "SELECT id, username, email, password_hash, created_at, updated_at FROM users WHERE username = ?"
+    )
+    .bind(&payload.username)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::new(format!("Database error: {}", e))),
+        )
+    })?;
+
+    let user = user.ok_or_else(|| {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse::new("Invalid username or password")),
+        )
+    })?;
+
+    let valid = verify_password(&payload.password, &user.password_hash).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::new(format!("Password verification error: {}", e))),
+        )
+    })?;
+
+    if !valid {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse::new("Invalid username or password")),
+        ));
+    }
+
+    let token = create_token(user.id, &user.username).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::new(format!("Token creation error: {}", e))),
+        )
+    })?;
+
+    Ok(Json(AuthResponse {
+        token,
+        user: user.into(),
+    }))
 }

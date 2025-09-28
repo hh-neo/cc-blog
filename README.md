@@ -1,61 +1,58 @@
-# Message Board API
+# Blog API - Rust + Axum + MySQL
 
-一个使用 Rust + MySQL 构建的留言板应用，提供用户注册登录和文章管理功能。
+一个功能完整的博客/留言板 REST API，使用 Rust、Axum 框架和 MySQL 数据库构建，适合生产环境部署。
 
 ## 功能特性
 
-- 用户注册与登录
-- JWT 认证
-- 文章的增删改查
-- 密码加密存储
-- RESTful API 设计
-- 完整的单元测试和集成测试
+- ✅ 用户注册和登录
+- ✅ JWT 身份认证
+- ✅ 文章的完整 CRUD 操作（增删改查）
+- ✅ 密码加密存储（bcrypt）
+- ✅ 输入验证
+- ✅ CORS 支持
+- ✅ 完整的单元测试和集成测试
+- ✅ 生产环境就绪
 
 ## 技术栈
 
-- **Rust** - 系统编程语言
-- **Actix-Web** - Web 框架
-- **SQLx** - 异步 SQL 工具包
-- **MySQL** - 数据库
-- **JWT** - 身份认证
-- **Bcrypt** - 密码加密
+- **框架**: Axum 0.7
+- **数据库**: MySQL (通过 sqlx)
+- **认证**: JWT (jsonwebtoken)
+- **密码加密**: bcrypt
+- **异步运行时**: Tokio
+- **日志**: tracing
 
-## 项目结构
+## API 端点
 
-```
-.
-├── src/
-│   ├── main.rs           # 应用入口
-│   ├── lib.rs            # 库入口
-│   ├── models.rs         # 数据模型
-│   ├── db.rs             # 数据库连接
-│   ├── auth.rs           # JWT 认证
-│   └── handlers/         # API 处理器
-│       ├── mod.rs
-│       ├── user_handler.rs
-│       └── post_handler.rs
-├── tests/                # 集成测试
-├── init.sql              # 数据库初始化脚本
-└── .env.example          # 环境变量示例
-```
+### 公开端点（无需认证）
+
+- `POST /register` - 用户注册
+- `POST /login` - 用户登录
+- `GET /posts` - 获取所有文章
+- `GET /posts/:id` - 获取单个文章
+
+### 受保护端点（需要 JWT token）
+
+- `POST /posts` - 创建新文章
+- `PUT /posts/:id` - 更新文章（仅作者）
+- `DELETE /posts/:id` - 删除文章（仅作者）
 
 ## 快速开始
 
-### 1. 前置要求
+### 前置要求
 
 - Rust 1.70+
-- MySQL 8.0+
+- MySQL 5.7+ 或 8.0+
 - Cargo
 
-### 2. 安装数据库
-
-确保 MySQL 已安装并运行，然后执行初始化脚本：
+### 1. 克隆项目
 
 ```bash
-mysql -u root -p < init.sql
+git clone <repository-url>
+cd cc-blog
 ```
 
-### 3. 配置环境变量
+### 2. 配置环境变量
 
 复制 `.env.example` 到 `.env` 并修改配置：
 
@@ -66,195 +63,281 @@ cp .env.example .env
 编辑 `.env` 文件：
 
 ```env
-DATABASE_URL=mysql://root:your_password@localhost:3306/message_board
-JWT_SECRET=your_secret_key_here_change_in_production
-RUST_LOG=info
-SERVER_HOST=127.0.0.1
-SERVER_PORT=8080
+DATABASE_URL=mysql://your_username:your_password@localhost:3306/blog_db
+JWT_SECRET=your_super_secret_jwt_key_min_32_chars
+SERVER_ADDR=0.0.0.0:3000
+```
+
+### 3. 初始化数据库
+
+```bash
+mysql -u root -p < init.sql
+```
+
+或者手动执行：
+
+```sql
+CREATE DATABASE IF NOT EXISTS blog_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE blog_db;
+-- 然后执行 init.sql 中的表创建语句
 ```
 
 ### 4. 运行项目
 
 ```bash
-# 开发模式
-cargo run
-
-# 发布模式
 cargo run --release
 ```
 
-服务器将在 `http://127.0.0.1:8080` 启动。
+服务器将在 `http://0.0.0.0:3000` 启动。
 
 ### 5. 运行测试
 
 ```bash
-# 运行所有测试
 cargo test
-
-# 运行单元测试
-cargo test --lib
-
-# 运行集成测试
-cargo test --test api_tests
 ```
 
-## API 文档
+## API 使用示例
 
-### 认证相关
+### 注册用户
 
-#### 注册用户
-
-```http
-POST /api/auth/register
-Content-Type: application/json
-
-{
-  "username": "testuser",
-  "email": "test@example.com",
-  "password": "password123"
-}
+```bash
+curl -X POST http://localhost:3000/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "testuser",
+    "email": "test@example.com",
+    "password": "password123"
+  }'
 ```
 
 响应：
 
 ```json
 {
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
   "user": {
     "id": 1,
     "username": "testuser",
-    "email": "test@example.com",
-    "created_at": "2025-01-01T00:00:00Z"
+    "email": "test@example.com"
   }
 }
 ```
 
-#### 用户登录
+### 登录
 
-```http
-POST /api/auth/login
-Content-Type: application/json
-
-{
-  "username": "testuser",
-  "password": "password123"
-}
-```
-
-响应格式同注册。
-
-### 文章相关
-
-#### 获取所有文章（无需认证）
-
-```http
-GET /api/posts
-```
-
-响应：
-
-```json
-[
-  {
-    "id": 1,
-    "user_id": 1,
+```bash
+curl -X POST http://localhost:3000/login \
+  -H "Content-Type: application/json" \
+  -d '{
     "username": "testuser",
-    "title": "文章标题",
-    "content": "文章内容",
-    "created_at": "2025-01-01T00:00:00Z",
-    "updated_at": "2025-01-01T00:00:00Z"
-  }
-]
+    "password": "password123"
+  }'
 ```
 
-#### 获取单篇文章（无需认证）
+### 创建文章（需要认证）
 
-```http
-GET /api/posts/{id}
+```bash
+curl -X POST http://localhost:3000/posts \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -d '{
+    "title": "我的第一篇文章",
+    "content": "这是文章内容..."
+  }'
 ```
 
-#### 创建文章（需要认证）
+### 获取所有文章
 
-```http
-POST /api/posts
-Authorization: Bearer {token}
-Content-Type: application/json
+```bash
+curl http://localhost:3000/posts
+```
 
-{
-  "title": "文章标题",
-  "content": "文章内容"
+### 更新文章（需要认证，仅作者）
+
+```bash
+curl -X PUT http://localhost:3000/posts/1 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -d '{
+    "title": "更新后的标题",
+    "content": "更新后的内容"
+  }'
+```
+
+### 删除文章（需要认证，仅作者）
+
+```bash
+curl -X DELETE http://localhost:3000/posts/1 \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+## 生产环境部署
+
+### Docker 部署（推荐）
+
+1. 创建 Dockerfile：
+
+```dockerfile
+FROM rust:1.75 as builder
+WORKDIR /app
+COPY . .
+RUN cargo build --release
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y libssl3 ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /app/target/release/blog-api /usr/local/bin/blog-api
+EXPOSE 3000
+CMD ["blog-api"]
+```
+
+2. 构建并运行：
+
+```bash
+docker build -t blog-api .
+docker run -d -p 3000:3000 --env-file .env blog-api
+```
+
+### 传统部署
+
+1. 编译发布版本：
+
+```bash
+cargo build --release
+```
+
+2. 复制可执行文件到服务器：
+
+```bash
+scp target/release/blog-api user@server:/opt/blog-api/
+```
+
+3. 在服务器上配置 systemd 服务：
+
+创建 `/etc/systemd/system/blog-api.service`：
+
+```ini
+[Unit]
+Description=Blog API Service
+After=network.target mysql.service
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/blog-api
+EnvironmentFile=/opt/blog-api/.env
+ExecStart=/opt/blog-api/blog-api
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+4. 启动服务：
+
+```bash
+sudo systemctl enable blog-api
+sudo systemctl start blog-api
+sudo systemctl status blog-api
+```
+
+### 使用 Nginx 反向代理
+
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
 }
 ```
 
-#### 更新文章（需要认证，仅作者）
+## 安全建议
 
-```http
-PUT /api/posts/{id}
-Authorization: Bearer {token}
-Content-Type: application/json
+1. **JWT Secret**: 使用至少 32 个字符的随机字符串
+2. **HTTPS**: 生产环境务必使用 HTTPS
+3. **密码策略**: 建议实施更强的密码策略
+4. **Rate Limiting**: 添加速率限制防止滥用
+5. **输入验证**: 已包含基本验证，可根据需要加强
+6. **数据库**: 使用专用数据库用户，最小权限原则
+7. **日志**: 监控日志，及时发现异常
 
-{
-  "title": "新标题",
-  "content": "新内容"
-}
+## 项目结构
+
 ```
-
-#### 删除文章（需要认证，仅作者）
-
-```http
-DELETE /api/posts/{id}
-Authorization: Bearer {token}
+cc-blog/
+├── src/
+│   ├── main.rs              # 主程序入口
+│   ├── lib.rs               # 库入口
+│   ├── db.rs                # 数据库连接
+│   ├── models.rs            # 数据模型
+│   ├── auth.rs              # JWT 认证中间件
+│   └── handlers/
+│       ├── mod.rs           # handlers 模块
+│       ├── user_handler.rs  # 用户相关接口
+│       └── post_handler.rs  # 文章相关接口
+├── tests/
+│   └── api_tests.rs         # API 集成测试
+├── init.sql                 # 数据库初始化脚本
+├── Cargo.toml               # 项目配置
+├── .env.example             # 环境变量示例
+└── README.md                # 项目说明
 ```
-
-## 数据库架构
-
-### users 表
-
-| 字段          | 类型         | 说明           |
-| ------------- | ------------ | -------------- |
-| id            | INT          | 主键，自增     |
-| username      | VARCHAR(50)  | 用户名，唯一   |
-| email         | VARCHAR(100) | 邮箱，唯一     |
-| password_hash | VARCHAR(255) | 密码哈希       |
-| created_at    | TIMESTAMP    | 创建时间       |
-| updated_at    | TIMESTAMP    | 更新时间       |
-
-### posts 表
-
-| 字段       | 类型         | 说明         |
-| ---------- | ------------ | ------------ |
-| id         | INT          | 主键，自增   |
-| user_id    | INT          | 外键，用户ID |
-| title      | VARCHAR(200) | 文章标题     |
-| content    | TEXT         | 文章内容     |
-| created_at | TIMESTAMP    | 创建时间     |
-| updated_at | TIMESTAMP    | 更新时间     |
-
-## 安全性
-
-- 密码使用 bcrypt 加密，默认 cost 为 12
-- JWT token 有效期为 24 小时
-- 文章的更新和删除仅限作者本人
-- 使用参数化查询防止 SQL 注入
-- 请在生产环境中修改 `JWT_SECRET`
 
 ## 测试
 
-项目包含完整的测试覆盖：
+运行所有测试：
 
-- **单元测试**: 测试模型序列化、JWT 创建和验证
-- **集成测试**: 测试完整的 API 流程
+```bash
+cargo test
+```
 
-运行测试前请确保数据库已正确配置。
+运行特定测试：
 
-## 开发建议
+```bash
+cargo test test_register
+cargo test test_create_post
+```
 
-1. 在生产环境中使用强密码和安全的 JWT_SECRET
-2. 考虑添加请求频率限制
-3. 可以添加日志记录和监控
-4. 考虑使用 HTTPS
-5. 定期备份数据库
+## 性能优化
+
+- 使用 `--release` 模式编译以获得最佳性能
+- 配置数据库连接池大小（默认 10）
+- 考虑添加 Redis 进行会话缓存
+- 使用 CDN 加速静态资源
+
+## 故障排查
+
+### 数据库连接失败
+
+检查：
+- MySQL 服务是否运行
+- DATABASE_URL 是否正确
+- 用户权限是否足够
+
+### JWT 验证失败
+
+检查：
+- JWT_SECRET 是否一致
+- token 是否过期（默认 24 小时）
 
 ## 许可证
 
-MIT License
+MIT
+
+## 贡献
+
+欢迎提交 Issue 和 Pull Request！
+
+## 联系方式
+
+如有问题，请提交 Issue。

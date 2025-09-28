@@ -1,165 +1,290 @@
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    Extension, Json,
+};
+use validator::Validate;
+
+use crate::auth::Claims;
 use crate::db::DbPool;
-use crate::models::{Claims, CreatePostRequest, Post, PostResponse, UpdatePostRequest};
-use actix_web::{web, HttpResponse, Result};
+use crate::models::{CreatePostRequest, ErrorResponse, PostResponse, UpdatePostRequest};
 
 pub async fn create_post(
-    pool: web::Data<DbPool>,
-    req: web::Json<CreatePostRequest>,
-    claims: web::ReqData<Claims>,
-) -> Result<HttpResponse> {
-    let user_id = claims.into_inner().sub;
-    let result = sqlx::query(
-        "INSERT INTO posts (user_id, title, content) VALUES (?, ?, ?)"
-    )
-    .bind(user_id)
-    .bind(&req.title)
-    .bind(&req.content)
-    .execute(pool.get_ref())
-    .await
-    .map_err(|e| actix_web::error::ErrorInternalServerError(e))?;
+    State(pool): State<DbPool>,
+    Extension(claims): Extension<Claims>,
+    Json(payload): Json<CreatePostRequest>,
+) -> Result<Json<PostResponse>, (StatusCode, Json<ErrorResponse>)> {
+    if let Err(errors) = payload.validate() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse::new(format!("Validation error: {}", errors))),
+        ));
+    }
+
+    let result = sqlx::query("INSERT INTO posts (title, content, user_id) VALUES (?, ?, ?)")
+        .bind(&payload.title)
+        .bind(&payload.content)
+        .bind(claims.sub)
+        .execute(&pool)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::new(format!("Database error: {}", e))),
+            )
+        })?;
 
     let post_id = result.last_insert_id() as i32;
 
-    let post = sqlx::query_as::<_, PostResponse>(
-        "SELECT p.id, p.user_id, u.username, p.title, p.content, p.created_at, p.updated_at
+    let post: PostResponse = sqlx::query_as::<_, (i32, String, String, i32, String, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)>(
+        "SELECT p.id, p.title, p.content, p.user_id, u.username, p.created_at, p.updated_at
          FROM posts p
          JOIN users u ON p.user_id = u.id
          WHERE p.id = ?"
     )
     .bind(post_id)
-    .fetch_one(pool.get_ref())
+    .fetch_one(&pool)
     .await
-    .map_err(|e| actix_web::error::ErrorInternalServerError(e))?;
+    .map(|(id, title, content, user_id, username, created_at, updated_at)| PostResponse {
+        id,
+        title,
+        content,
+        user_id,
+        username,
+        created_at,
+        updated_at,
+    })
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::new(format!("Database error: {}", e))),
+        )
+    })?;
 
-    Ok(HttpResponse::Created().json(post))
+    Ok(Json(post))
 }
 
 pub async fn get_posts(
-    pool: web::Data<DbPool>,
-) -> Result<HttpResponse> {
-    let posts = sqlx::query_as::<_, PostResponse>(
-        "SELECT p.id, p.user_id, u.username, p.title, p.content, p.created_at, p.updated_at
+    State(pool): State<DbPool>,
+) -> Result<Json<Vec<PostResponse>>, (StatusCode, Json<ErrorResponse>)> {
+    let posts: Vec<PostResponse> = sqlx::query_as::<_, (i32, String, String, i32, String, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)>(
+        "SELECT p.id, p.title, p.content, p.user_id, u.username, p.created_at, p.updated_at
          FROM posts p
          JOIN users u ON p.user_id = u.id
          ORDER BY p.created_at DESC"
     )
-    .fetch_all(pool.get_ref())
+    .fetch_all(&pool)
     .await
-    .map_err(|e| actix_web::error::ErrorInternalServerError(e))?;
+    .map(|rows| {
+        rows.into_iter()
+            .map(|(id, title, content, user_id, username, created_at, updated_at)| PostResponse {
+                id,
+                title,
+                content,
+                user_id,
+                username,
+                created_at,
+                updated_at,
+            })
+            .collect()
+    })
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::new(format!("Database error: {}", e))),
+        )
+    })?;
 
-    Ok(HttpResponse::Ok().json(posts))
+    Ok(Json(posts))
 }
 
 pub async fn get_post(
-    pool: web::Data<DbPool>,
-    post_id: web::Path<i32>,
-) -> Result<HttpResponse> {
-    let post = sqlx::query_as::<_, PostResponse>(
-        "SELECT p.id, p.user_id, u.username, p.title, p.content, p.created_at, p.updated_at
+    State(pool): State<DbPool>,
+    Path(id): Path<i32>,
+) -> Result<Json<PostResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let post: PostResponse = sqlx::query_as::<_, (i32, String, String, i32, String, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)>(
+        "SELECT p.id, p.title, p.content, p.user_id, u.username, p.created_at, p.updated_at
          FROM posts p
          JOIN users u ON p.user_id = u.id
          WHERE p.id = ?"
     )
-    .bind(post_id.into_inner())
-    .fetch_optional(pool.get_ref())
+    .bind(id)
+    .fetch_optional(&pool)
     .await
-    .map_err(|e| actix_web::error::ErrorInternalServerError(e))?;
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::new(format!("Database error: {}", e))),
+        )
+    })?
+    .map(|(id, title, content, user_id, username, created_at, updated_at)| PostResponse {
+        id,
+        title,
+        content,
+        user_id,
+        username,
+        created_at,
+        updated_at,
+    })
+    .ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse::new("Post not found")),
+        )
+    })?;
 
-    match post {
-        Some(post) => Ok(HttpResponse::Ok().json(post)),
-        None => Ok(HttpResponse::NotFound().json(serde_json::json!({
-            "error": "Post not found"
-        }))),
-    }
+    Ok(Json(post))
 }
 
 pub async fn update_post(
-    pool: web::Data<DbPool>,
-    post_id: web::Path<i32>,
-    req: web::Json<UpdatePostRequest>,
-    claims: web::ReqData<Claims>,
-) -> Result<HttpResponse> {
-    let post = sqlx::query_as::<_, Post>(
-        "SELECT * FROM posts WHERE id = ?"
-    )
-    .bind(post_id.into_inner())
-    .fetch_optional(pool.get_ref())
-    .await
-    .map_err(|e| actix_web::error::ErrorInternalServerError(e))?;
-
-    match post {
-        Some(post) => {
-            if post.user_id != claims.into_inner().sub {
-                return Ok(HttpResponse::Forbidden().json(serde_json::json!({
-                    "error": "You don't have permission to update this post"
-                })));
-            }
-
-            let title = req.title.as_ref().unwrap_or(&post.title);
-            let content = req.content.as_ref().unwrap_or(&post.content);
-
-            sqlx::query(
-                "UPDATE posts SET title = ?, content = ? WHERE id = ?"
-            )
-            .bind(title)
-            .bind(content)
-            .bind(post.id)
-            .execute(pool.get_ref())
-            .await
-            .map_err(|e| actix_web::error::ErrorInternalServerError(e))?;
-
-            let updated_post = sqlx::query_as::<_, PostResponse>(
-                "SELECT p.id, p.user_id, u.username, p.title, p.content, p.created_at, p.updated_at
-                 FROM posts p
-                 JOIN users u ON p.user_id = u.id
-                 WHERE p.id = ?"
-            )
-            .bind(post.id)
-            .fetch_one(pool.get_ref())
-            .await
-            .map_err(|e| actix_web::error::ErrorInternalServerError(e))?;
-
-            Ok(HttpResponse::Ok().json(updated_post))
-        }
-        None => Ok(HttpResponse::NotFound().json(serde_json::json!({
-            "error": "Post not found"
-        }))),
+    State(pool): State<DbPool>,
+    Extension(claims): Extension<Claims>,
+    Path(id): Path<i32>,
+    Json(payload): Json<UpdatePostRequest>,
+) -> Result<Json<PostResponse>, (StatusCode, Json<ErrorResponse>)> {
+    if let Err(errors) = payload.validate() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse::new(format!("Validation error: {}", errors))),
+        ));
     }
+
+    let post: Option<(i32, i32)> = sqlx::query_as("SELECT id, user_id FROM posts WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::new(format!("Database error: {}", e))),
+            )
+        })?;
+
+    let (_, user_id) = post.ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse::new("Post not found")),
+        )
+    })?;
+
+    if user_id != claims.sub {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse::new("You can only update your own posts")),
+        ));
+    }
+
+    if payload.title.is_none() && payload.content.is_none() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse::new("At least one field must be provided")),
+        ));
+    }
+
+    let mut query_parts = Vec::new();
+    let mut has_title = false;
+    let mut has_content = false;
+
+    if payload.title.is_some() {
+        query_parts.push("title = ?");
+        has_title = true;
+    }
+    if payload.content.is_some() {
+        query_parts.push("content = ?");
+        has_content = true;
+    }
+
+    let query = format!(
+        "UPDATE posts SET {} WHERE id = ?",
+        query_parts.join(", ")
+    );
+
+    let mut query_builder = sqlx::query(&query);
+
+    if has_title {
+        query_builder = query_builder.bind(payload.title.as_ref().unwrap());
+    }
+    if has_content {
+        query_builder = query_builder.bind(payload.content.as_ref().unwrap());
+    }
+
+    query_builder = query_builder.bind(id);
+
+    query_builder.execute(&pool).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::new(format!("Database error: {}", e))),
+        )
+    })?;
+
+    let post: PostResponse = sqlx::query_as::<_, (i32, String, String, i32, String, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)>(
+        "SELECT p.id, p.title, p.content, p.user_id, u.username, p.created_at, p.updated_at
+         FROM posts p
+         JOIN users u ON p.user_id = u.id
+         WHERE p.id = ?"
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .map(|(id, title, content, user_id, username, created_at, updated_at)| PostResponse {
+        id,
+        title,
+        content,
+        user_id,
+        username,
+        created_at,
+        updated_at,
+    })
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::new(format!("Database error: {}", e))),
+        )
+    })?;
+
+    Ok(Json(post))
 }
 
 pub async fn delete_post(
-    pool: web::Data<DbPool>,
-    post_id: web::Path<i32>,
-    claims: web::ReqData<Claims>,
-) -> Result<HttpResponse> {
-    let post = sqlx::query_as::<_, Post>(
-        "SELECT * FROM posts WHERE id = ?"
-    )
-    .bind(post_id.into_inner())
-    .fetch_optional(pool.get_ref())
-    .await
-    .map_err(|e| actix_web::error::ErrorInternalServerError(e))?;
+    State(pool): State<DbPool>,
+    Extension(claims): Extension<Claims>,
+    Path(id): Path<i32>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let post: Option<(i32, i32)> = sqlx::query_as("SELECT id, user_id FROM posts WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::new(format!("Database error: {}", e))),
+            )
+        })?;
 
-    match post {
-        Some(post) => {
-            if post.user_id != claims.into_inner().sub {
-                return Ok(HttpResponse::Forbidden().json(serde_json::json!({
-                    "error": "You don't have permission to delete this post"
-                })));
-            }
+    let (_, user_id) = post.ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse::new("Post not found")),
+        )
+    })?;
 
-            sqlx::query("DELETE FROM posts WHERE id = ?")
-                .bind(post.id)
-                .execute(pool.get_ref())
-                .await
-                .map_err(|e| actix_web::error::ErrorInternalServerError(e))?;
-
-            Ok(HttpResponse::Ok().json(serde_json::json!({
-                "message": "Post deleted successfully"
-            })))
-        }
-        None => Ok(HttpResponse::NotFound().json(serde_json::json!({
-            "error": "Post not found"
-        }))),
+    if user_id != claims.sub {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse::new("You can only delete your own posts")),
+        ));
     }
+
+    sqlx::query("DELETE FROM posts WHERE id = ?")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::new(format!("Database error: {}", e))),
+            )
+        })?;
+
+    Ok(StatusCode::NO_CONTENT)
 }

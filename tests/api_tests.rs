@@ -1,161 +1,273 @@
-use actix_web::{test, web, App};
-use message_board::{auth, db, handlers, models};
+use axum::{
+    body::Body,
+    http::{Request, StatusCode},
+    middleware,
+    routing::{delete, get, post, put},
+    Router,
+};
+use axum_test::TestServer;
+use blog_api::{auth, db, handlers, models};
 use serde_json::json;
-use dotenv::dotenv;
 
-async fn setup_test_pool() -> db::DbPool {
-    dotenv().ok();
-    db::create_pool().await.expect("Failed to create test pool")
+async fn setup_test_server() -> TestServer {
+    dotenv::dotenv().ok();
+
+    let pool = db::create_pool()
+        .await
+        .expect("Failed to create database pool");
+
+    let public_routes = Router::new()
+        .route("/register", post(handlers::user_handler::register))
+        .route("/login", post(handlers::user_handler::login))
+        .route("/posts", get(handlers::post_handler::get_posts))
+        .route("/posts/:id", get(handlers::post_handler::get_post));
+
+    let protected_routes = Router::new()
+        .route("/posts", post(handlers::post_handler::create_post))
+        .route("/posts/:id", put(handlers::post_handler::update_post))
+        .route("/posts/:id", delete(handlers::post_handler::delete_post))
+        .route_layer(middleware::from_fn_with_state(
+            pool.clone(),
+            auth::auth_middleware,
+        ));
+
+    let app = Router::new()
+        .merge(public_routes)
+        .merge(protected_routes)
+        .with_state(pool);
+
+    TestServer::new(app).unwrap()
 }
 
-#[actix_web::test]
-async fn test_register_user() {
-    let pool = setup_test_pool().await;
-    let app = test::init_service(
-        App::new()
-            .app_data(web::Data::new(pool.clone()))
-            .service(
-                web::scope("/api/auth")
-                    .route("/register", web::post().to(handlers::user_handler::register))
-            )
-    ).await;
+#[tokio::test]
+async fn test_register() {
+    let server = setup_test_server().await;
 
-    let unique_username = format!("testuser_{}", chrono::Utc::now().timestamp());
-    let unique_email = format!("{}@test.com", unique_username);
-
-    let req = test::TestRequest::post()
-        .uri("/api/auth/register")
-        .set_json(json!({
-            "username": unique_username,
-            "email": unique_email,
+    let username = format!("testuser_{}", chrono::Utc::now().timestamp());
+    let response = server
+        .post("/register")
+        .json(&json!({
+            "username": username,
+            "email": format!("{}@test.com", username),
             "password": "password123"
         }))
-        .to_request();
+        .await;
 
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
+    response.assert_status(StatusCode::OK);
+
+    let body: models::AuthResponse = response.json();
+    assert!(!body.token.is_empty());
+    assert_eq!(body.user.username, username);
 }
 
-#[actix_web::test]
-async fn test_login_user() {
-    let pool = setup_test_pool().await;
-    let app = test::init_service(
-        App::new()
-            .app_data(web::Data::new(pool.clone()))
-            .service(
-                web::scope("/api/auth")
-                    .route("/register", web::post().to(handlers::user_handler::register))
-                    .route("/login", web::post().to(handlers::user_handler::login))
-            )
-    ).await;
+#[tokio::test]
+async fn test_register_duplicate_username() {
+    let server = setup_test_server().await;
 
-    let unique_username = format!("logintest_{}", chrono::Utc::now().timestamp());
-    let unique_email = format!("{}@test.com", unique_username);
-
-    let register_req = test::TestRequest::post()
-        .uri("/api/auth/register")
-        .set_json(json!({
-            "username": unique_username,
-            "email": unique_email,
+    let username = format!("testuser_{}", chrono::Utc::now().timestamp());
+    server
+        .post("/register")
+        .json(&json!({
+            "username": username,
+            "email": format!("{}@test.com", username),
             "password": "password123"
         }))
-        .to_request();
+        .await;
 
-    test::call_service(&app, register_req).await;
-
-    let login_req = test::TestRequest::post()
-        .uri("/api/auth/login")
-        .set_json(json!({
-            "username": unique_username,
+    let response = server
+        .post("/register")
+        .json(&json!({
+            "username": username,
+            "email": format!("another_{}@test.com", username),
             "password": "password123"
         }))
-        .to_request();
+        .await;
 
-    let resp = test::call_service(&app, login_req).await;
-    assert_eq!(resp.status(), 200);
+    response.assert_status(StatusCode::CONFLICT);
 }
 
-#[actix_web::test]
+#[tokio::test]
+async fn test_login() {
+    let server = setup_test_server().await;
+
+    let username = format!("testuser_{}", chrono::Utc::now().timestamp());
+    server
+        .post("/register")
+        .json(&json!({
+            "username": username,
+            "email": format!("{}@test.com", username),
+            "password": "password123"
+        }))
+        .await;
+
+    let response = server
+        .post("/login")
+        .json(&json!({
+            "username": username,
+            "password": "password123"
+        }))
+        .await;
+
+    response.assert_status(StatusCode::OK);
+
+    let body: models::AuthResponse = response.json();
+    assert!(!body.token.is_empty());
+    assert_eq!(body.user.username, username);
+}
+
+#[tokio::test]
+async fn test_login_invalid_credentials() {
+    let server = setup_test_server().await;
+
+    let response = server
+        .post("/login")
+        .json(&json!({
+            "username": "nonexistent",
+            "password": "wrongpassword"
+        }))
+        .await;
+
+    response.assert_status(StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
 async fn test_create_post() {
-    let pool = setup_test_pool().await;
+    let server = setup_test_server().await;
 
-    let unique_username = format!("posttest_{}", chrono::Utc::now().timestamp());
-    let unique_email = format!("{}@test.com", unique_username);
-
-    let password_hash = bcrypt::hash("password123", bcrypt::DEFAULT_COST).unwrap();
-    let result = sqlx::query(
-        "INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)"
-    )
-    .bind(&unique_username)
-    .bind(&unique_email)
-    .bind(&password_hash)
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    let user_id = result.last_insert_id() as i32;
-    let token = auth::create_jwt(user_id, &unique_username).unwrap();
-
-    let app = test::init_service(
-        App::new()
-            .app_data(web::Data::new(pool.clone()))
-            .service(
-                web::scope("/api/posts")
-                    .route("", web::post().to(handlers::post_handler::create_post))
-            )
-    ).await;
-
-    let req = test::TestRequest::post()
-        .uri("/api/posts")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({
-            "title": "Test Post",
-            "content": "This is a test post"
+    let username = format!("testuser_{}", chrono::Utc::now().timestamp());
+    let register_response = server
+        .post("/register")
+        .json(&json!({
+            "username": username,
+            "email": format!("{}@test.com", username),
+            "password": "password123"
         }))
-        .to_request();
+        .await;
 
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
+    let auth: models::AuthResponse = register_response.json();
+
+    let response = server
+        .post("/posts")
+        .add_header("Authorization", format!("Bearer {}", auth.token))
+        .json(&json!({
+            "title": "Test Post",
+            "content": "This is a test post content"
+        }))
+        .await;
+
+    response.assert_status(StatusCode::OK);
+
+    let post: models::PostResponse = response.json();
+    assert_eq!(post.title, "Test Post");
+    assert_eq!(post.content, "This is a test post content");
 }
 
-#[actix_web::test]
+#[tokio::test]
+async fn test_create_post_unauthorized() {
+    let server = setup_test_server().await;
+
+    let response = server
+        .post("/posts")
+        .json(&json!({
+            "title": "Test Post",
+            "content": "This is a test post content"
+        }))
+        .await;
+
+    response.assert_status(StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
 async fn test_get_posts() {
-    let pool = setup_test_pool().await;
-    let app = test::init_service(
-        App::new()
-            .app_data(web::Data::new(pool.clone()))
-            .service(
-                web::scope("/api/posts")
-                    .route("", web::get().to(handlers::post_handler::get_posts))
-            )
-    ).await;
+    let server = setup_test_server().await;
 
-    let req = test::TestRequest::get()
-        .uri("/api/posts")
-        .to_request();
+    let response = server.get("/posts").await;
 
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200);
+    response.assert_status(StatusCode::OK);
+
+    let posts: Vec<models::PostResponse> = response.json();
+    assert!(posts.len() >= 0);
 }
 
-#[test]
-fn test_jwt_creation_and_verification() {
-    std::env::set_var("JWT_SECRET", "test_secret_key");
+#[tokio::test]
+async fn test_update_post() {
+    let server = setup_test_server().await;
 
-    let user_id = 1;
-    let username = "testuser";
+    let username = format!("testuser_{}", chrono::Utc::now().timestamp());
+    let register_response = server
+        .post("/register")
+        .json(&json!({
+            "username": username,
+            "email": format!("{}@test.com", username),
+            "password": "password123"
+        }))
+        .await;
 
-    let token = auth::create_jwt(user_id, username).unwrap();
-    let claims = auth::verify_jwt(&token).unwrap();
+    let auth: models::AuthResponse = register_response.json();
 
-    assert_eq!(claims.sub, user_id);
-    assert_eq!(claims.username, username);
+    let create_response = server
+        .post("/posts")
+        .add_header("Authorization", format!("Bearer {}", auth.token))
+        .json(&json!({
+            "title": "Original Title",
+            "content": "Original Content"
+        }))
+        .await;
+
+    let created_post: models::PostResponse = create_response.json();
+
+    let response = server
+        .put(&format!("/posts/{}", created_post.id))
+        .add_header("Authorization", format!("Bearer {}", auth.token))
+        .json(&json!({
+            "title": "Updated Title"
+        }))
+        .await;
+
+    response.assert_status(StatusCode::OK);
+
+    let updated_post: models::PostResponse = response.json();
+    assert_eq!(updated_post.title, "Updated Title");
+    assert_eq!(updated_post.content, "Original Content");
 }
 
-#[test]
-fn test_jwt_invalid_token() {
-    std::env::set_var("JWT_SECRET", "test_secret_key");
+#[tokio::test]
+async fn test_delete_post() {
+    let server = setup_test_server().await;
 
-    let result = auth::verify_jwt("invalid_token");
-    assert!(result.is_err());
+    let username = format!("testuser_{}", chrono::Utc::now().timestamp());
+    let register_response = server
+        .post("/register")
+        .json(&json!({
+            "username": username,
+            "email": format!("{}@test.com", username),
+            "password": "password123"
+        }))
+        .await;
+
+    let auth: models::AuthResponse = register_response.json();
+
+    let create_response = server
+        .post("/posts")
+        .add_header("Authorization", format!("Bearer {}", auth.token))
+        .json(&json!({
+            "title": "To Be Deleted",
+            "content": "This post will be deleted"
+        }))
+        .await;
+
+    let created_post: models::PostResponse = create_response.json();
+
+    let response = server
+        .delete(&format!("/posts/{}", created_post.id))
+        .add_header("Authorization", format!("Bearer {}", auth.token))
+        .await;
+
+    response.assert_status(StatusCode::NO_CONTENT);
+
+    let get_response = server
+        .get(&format!("/posts/{}", created_post.id))
+        .await;
+
+    get_response.assert_status(StatusCode::NOT_FOUND);
 }
