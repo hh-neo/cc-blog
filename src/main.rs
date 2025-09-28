@@ -36,8 +36,18 @@ async fn main() {
         .route("/login", post(handlers::user_handler::login))
         .route("/posts", get(handlers::post_handler::get_posts))
         .route("/posts/:id", get(handlers::post_handler::get_post))
-        .route("/wallets/generate", post(handlers::wallet_handler::generate_wallets))
-        .route("/transfer/batch", post(handlers::transfer_handler::batch_transfer));
+        .route(
+            "/wallets/generate",
+            post(handlers::wallet_handler::generate_wallets),
+        )
+        .route(
+            "/transfer/batch",
+            post(handlers::transfer_handler::batch_transfer),
+        )
+        .route(
+            "/contract/call",
+            post(handlers::contract_handler::call_contract),
+        );
 
     let protected_routes = Router::new()
         .route("/posts", post(handlers::post_handler::create_post))
@@ -55,8 +65,7 @@ async fn main() {
         .layer(TraceLayer::new_for_http())
         .with_state(pool);
 
-    let addr = std::env::var("SERVER_ADDR")
-        .unwrap_or_else(|_| "0.0.0.0:3000".to_string());
+    let addr = std::env::var("SERVER_ADDR").unwrap_or_else(|_| "0.0.0.0:3000".to_string());
 
     let listener = tokio::net::TcpListener::bind(&addr)
         .await

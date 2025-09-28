@@ -3,7 +3,9 @@ use validator::Validate;
 
 use crate::auth::{create_token, hash_password, verify_password};
 use crate::db::DbPool;
-use crate::models::{AuthResponse, ErrorResponse, LoginRequest, RegisterRequest, User, UserResponse};
+use crate::models::{
+    AuthResponse, ErrorResponse, LoginRequest, RegisterRequest, User, UserResponse,
+};
 
 pub async fn register(
     State(pool): State<DbPool>,
@@ -12,7 +14,7 @@ pub async fn register(
     if let Err(errors) = payload.validate() {
         return Err((
             StatusCode::BAD_REQUEST,
-            Json(ErrorResponse::new(format!("Validation error: {}", errors))),
+            Json(ErrorResponse::new(format!("Validation error: {errors}"))),
         ));
     }
 
@@ -25,7 +27,7 @@ pub async fn register(
             .map_err(|e| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse::new(format!("Database error: {}", e))),
+                    Json(ErrorResponse::new(format!("Database error: {e}"))),
                 )
             })?;
 
@@ -39,31 +41,29 @@ pub async fn register(
     let password_hash = hash_password(&payload.password).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::new(format!("Password hashing error: {}", e))),
+            Json(ErrorResponse::new(format!("Password hashing error: {e}"))),
         )
     })?;
 
-    let result = sqlx::query(
-        "INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)"
-    )
-    .bind(&payload.username)
-    .bind(&payload.email)
-    .bind(&password_hash)
-    .execute(&pool)
-    .await
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::new(format!("Database error: {}", e))),
-        )
-    })?;
+    let result = sqlx::query("INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)")
+        .bind(&payload.username)
+        .bind(&payload.email)
+        .bind(&password_hash)
+        .execute(&pool)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::new(format!("Database error: {e}"))),
+            )
+        })?;
 
     let user_id = result.last_insert_id() as i32;
 
     let token = create_token(user_id, &payload.username).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::new(format!("Token creation error: {}", e))),
+            Json(ErrorResponse::new(format!("Token creation error: {e}"))),
         )
     })?;
 
@@ -84,7 +84,7 @@ pub async fn login(
     if let Err(errors) = payload.validate() {
         return Err((
             StatusCode::BAD_REQUEST,
-            Json(ErrorResponse::new(format!("Validation error: {}", errors))),
+            Json(ErrorResponse::new(format!("Validation error: {errors}"))),
         ));
     }
 
@@ -97,7 +97,7 @@ pub async fn login(
     .map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::new(format!("Database error: {}", e))),
+            Json(ErrorResponse::new(format!("Database error: {e}"))),
         )
     })?;
 
@@ -111,7 +111,9 @@ pub async fn login(
     let valid = verify_password(&payload.password, &user.password_hash).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::new(format!("Password verification error: {}", e))),
+            Json(ErrorResponse::new(format!(
+                "Password verification error: {e}"
+            ))),
         )
     })?;
 
@@ -125,7 +127,7 @@ pub async fn login(
     let token = create_token(user.id, &user.username).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::new(format!("Token creation error: {}", e))),
+            Json(ErrorResponse::new(format!("Token creation error: {e}"))),
         )
     })?;
 

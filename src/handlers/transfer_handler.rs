@@ -14,7 +14,7 @@ use crate::models::{ErrorResponse, TransferRequest, TransferResponse, TransferRe
 
 fn get_rpc_url(chain: &str) -> Result<String, String> {
     let env_key = format!("RPC_URL_{}", chain.to_uppercase());
-    env::var(&env_key).map_err(|_| format!("RPC URL not configured for chain: {}", chain))
+    env::var(&env_key).map_err(|_| format!("RPC URL not configured for chain: {chain}"))
 }
 
 pub async fn batch_transfer(
@@ -23,21 +23,19 @@ pub async fn batch_transfer(
     if let Err(errors) = payload.validate() {
         return Err((
             StatusCode::BAD_REQUEST,
-            Json(ErrorResponse::new(format!("Validation error: {}", errors))),
+            Json(ErrorResponse::new(format!("Validation error: {errors}"))),
         ));
     }
 
-    let rpc_url = get_rpc_url(&payload.chain).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse::new(e)),
-        )
-    })?;
+    let rpc_url = get_rpc_url(&payload.chain)
+        .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse::new(e))))?;
 
     let provider = Provider::<Http>::try_from(rpc_url).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::new(format!("Failed to connect to RPC: {}", e))),
+            Json(ErrorResponse::new(format!(
+                "Failed to connect to RPC: {e}"
+            ))),
         )
     })?;
 
@@ -47,14 +45,14 @@ pub async fn batch_transfer(
     let wallet: LocalWallet = private_key.parse().map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
-            Json(ErrorResponse::new(format!("Invalid private key: {}", e))),
+            Json(ErrorResponse::new(format!("Invalid private key: {e}"))),
         )
     })?;
 
     let chain_id = provider.get_chainid().await.map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::new(format!("Failed to get chain ID: {}", e))),
+            Json(ErrorResponse::new(format!("Failed to get chain ID: {e}"))),
         )
     })?;
 
@@ -91,51 +89,47 @@ pub async fn batch_transfer(
             )
         })?;
 
-        let tx = TransactionRequest::new()
-            .to(to_address)
-            .value(amount);
+        let tx = TransactionRequest::new().to(to_address).value(amount);
 
         match client.send_transaction(tx, None).await {
-            Ok(pending_tx) => {
-                match pending_tx.await {
-                    Ok(Some(receipt)) => {
-                        success += 1;
-                        tracing::info!(
-                            "Transfer success: {} ETH to {}, tx: {:?}",
-                            amount_str,
-                            to_address_str,
-                            receipt.transaction_hash
-                        );
-                        results.push(TransferResult {
-                            to_address: to_address_str,
-                            amount: amount_str,
-                            success: true,
-                            tx_hash: Some(format!("{:?}", receipt.transaction_hash)),
-                            error: None,
-                        });
-                    }
-                    Ok(None) => {
-                        failed += 1;
-                        results.push(TransferResult {
-                            to_address: to_address_str,
-                            amount: amount_str,
-                            success: false,
-                            tx_hash: None,
-                            error: Some("Transaction receipt not found".to_string()),
-                        });
-                    }
-                    Err(e) => {
-                        failed += 1;
-                        results.push(TransferResult {
-                            to_address: to_address_str,
-                            amount: amount_str,
-                            success: false,
-                            tx_hash: None,
-                            error: Some(format!("Transaction failed: {}", e)),
-                        });
-                    }
+            Ok(pending_tx) => match pending_tx.await {
+                Ok(Some(receipt)) => {
+                    success += 1;
+                    tracing::info!(
+                        "Transfer success: {} ETH to {}, tx: {:?}",
+                        amount_str,
+                        to_address_str,
+                        receipt.transaction_hash
+                    );
+                    results.push(TransferResult {
+                        to_address: to_address_str,
+                        amount: amount_str,
+                        success: true,
+                        tx_hash: Some(format!("{:?}", receipt.transaction_hash)),
+                        error: None,
+                    });
                 }
-            }
+                Ok(None) => {
+                    failed += 1;
+                    results.push(TransferResult {
+                        to_address: to_address_str,
+                        amount: amount_str,
+                        success: false,
+                        tx_hash: None,
+                        error: Some("Transaction receipt not found".to_string()),
+                    });
+                }
+                Err(e) => {
+                    failed += 1;
+                    results.push(TransferResult {
+                        to_address: to_address_str,
+                        amount: amount_str,
+                        success: false,
+                        tx_hash: None,
+                        error: Some(format!("Transaction failed: {e}")),
+                    });
+                }
+            },
             Err(e) => {
                 failed += 1;
                 results.push(TransferResult {
@@ -143,7 +137,7 @@ pub async fn batch_transfer(
                     amount: amount_str,
                     success: false,
                     tx_hash: None,
-                    error: Some(format!("Failed to send transaction: {}", e)),
+                    error: Some(format!("Failed to send transaction: {e}")),
                 });
             }
         }

@@ -189,3 +189,26 @@ pub struct TransferResult {
     pub tx_hash: Option<String>,
     pub error: Option<String>,
 }
+
+#[derive(Debug, Deserialize, Validate)]
+pub struct ContractCallRequest {
+    #[validate(length(min = 2, max = 20))]
+    pub chain: String,
+    #[validate(length(min = 42, max = 42))]
+    pub contract_address: String,
+    pub abi: String,
+    #[validate(length(min = 1, max = 100))]
+    pub function_name: String,
+    pub params: Vec<serde_json::Value>,
+    #[validate(length(min = 64, max = 66))]
+    pub private_key: Option<String>,
+    pub value: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ContractCallResponse {
+    pub success: bool,
+    pub tx_hash: Option<String>,
+    pub result: Option<serde_json::Value>,
+    pub error: Option<String>,
+}

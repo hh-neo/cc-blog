@@ -21,7 +21,10 @@ async fn setup_test_server() -> TestServer {
         .route("/login", post(handlers::user_handler::login))
         .route("/posts", get(handlers::post_handler::get_posts))
         .route("/posts/:id", get(handlers::post_handler::get_post))
-        .route("/wallets/generate", post(handlers::wallet_handler::generate_wallets));
+        .route(
+            "/wallets/generate",
+            post(handlers::wallet_handler::generate_wallets),
+        );
 
     let protected_routes = Router::new()
         .route("/posts", post(handlers::post_handler::create_post))
@@ -263,9 +266,7 @@ async fn test_delete_post() {
 
     response.assert_status(StatusCode::NO_CONTENT);
 
-    let get_response = server
-        .get(&format!("/posts/{}", created_post.id))
-        .await;
+    let get_response = server.get(&format!("/posts/{}", created_post.id)).await;
 
     get_response.assert_status(StatusCode::NOT_FOUND);
 }
@@ -376,10 +377,7 @@ async fn test_generate_wallets_invalid_count_too_large() {
 async fn test_generate_wallets_missing_count() {
     let server = setup_test_server().await;
 
-    let response = server
-        .post("/wallets/generate")
-        .json(&json!({}))
-        .await;
+    let response = server.post("/wallets/generate").json(&json!({})).await;
 
     response.assert_status(StatusCode::UNPROCESSABLE_ENTITY);
 }

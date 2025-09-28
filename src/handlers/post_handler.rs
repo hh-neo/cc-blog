@@ -17,7 +17,7 @@ pub async fn create_post(
     if let Err(errors) = payload.validate() {
         return Err((
             StatusCode::BAD_REQUEST,
-            Json(ErrorResponse::new(format!("Validation error: {}", errors))),
+            Json(ErrorResponse::new(format!("Validation error: {errors}"))),
         ));
     }
 
@@ -30,34 +30,47 @@ pub async fn create_post(
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse::new(format!("Database error: {}", e))),
+                Json(ErrorResponse::new(format!("Database error: {e}"))),
             )
         })?;
 
     let post_id = result.last_insert_id() as i32;
 
-    let post: PostResponse = sqlx::query_as::<_, (i32, String, String, i32, String, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)>(
+    let post: PostResponse = sqlx::query_as::<
+        _,
+        (
+            i32,
+            String,
+            String,
+            i32,
+            String,
+            chrono::DateTime<chrono::Utc>,
+            chrono::DateTime<chrono::Utc>,
+        ),
+    >(
         "SELECT p.id, p.title, p.content, p.user_id, u.username, p.created_at, p.updated_at
          FROM posts p
          JOIN users u ON p.user_id = u.id
-         WHERE p.id = ?"
+         WHERE p.id = ?",
     )
     .bind(post_id)
     .fetch_one(&pool)
     .await
-    .map(|(id, title, content, user_id, username, created_at, updated_at)| PostResponse {
-        id,
-        title,
-        content,
-        user_id,
-        username,
-        created_at,
-        updated_at,
-    })
+    .map(
+        |(id, title, content, user_id, username, created_at, updated_at)| PostResponse {
+            id,
+            title,
+            content,
+            user_id,
+            username,
+            created_at,
+            updated_at,
+        },
+    )
     .map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::new(format!("Database error: {}", e))),
+            Json(ErrorResponse::new(format!("Database error: {e}"))),
         )
     })?;
 
@@ -67,31 +80,44 @@ pub async fn create_post(
 pub async fn get_posts(
     State(pool): State<DbPool>,
 ) -> Result<Json<Vec<PostResponse>>, (StatusCode, Json<ErrorResponse>)> {
-    let posts: Vec<PostResponse> = sqlx::query_as::<_, (i32, String, String, i32, String, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)>(
+    let posts: Vec<PostResponse> = sqlx::query_as::<
+        _,
+        (
+            i32,
+            String,
+            String,
+            i32,
+            String,
+            chrono::DateTime<chrono::Utc>,
+            chrono::DateTime<chrono::Utc>,
+        ),
+    >(
         "SELECT p.id, p.title, p.content, p.user_id, u.username, p.created_at, p.updated_at
          FROM posts p
          JOIN users u ON p.user_id = u.id
-         ORDER BY p.created_at DESC"
+         ORDER BY p.created_at DESC",
     )
     .fetch_all(&pool)
     .await
     .map(|rows| {
         rows.into_iter()
-            .map(|(id, title, content, user_id, username, created_at, updated_at)| PostResponse {
-                id,
-                title,
-                content,
-                user_id,
-                username,
-                created_at,
-                updated_at,
-            })
+            .map(
+                |(id, title, content, user_id, username, created_at, updated_at)| PostResponse {
+                    id,
+                    title,
+                    content,
+                    user_id,
+                    username,
+                    created_at,
+                    updated_at,
+                },
+            )
             .collect()
     })
     .map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::new(format!("Database error: {}", e))),
+            Json(ErrorResponse::new(format!("Database error: {e}"))),
         )
     })?;
 
@@ -102,11 +128,22 @@ pub async fn get_post(
     State(pool): State<DbPool>,
     Path(id): Path<i32>,
 ) -> Result<Json<PostResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let post: PostResponse = sqlx::query_as::<_, (i32, String, String, i32, String, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)>(
+    let post: PostResponse = sqlx::query_as::<
+        _,
+        (
+            i32,
+            String,
+            String,
+            i32,
+            String,
+            chrono::DateTime<chrono::Utc>,
+            chrono::DateTime<chrono::Utc>,
+        ),
+    >(
         "SELECT p.id, p.title, p.content, p.user_id, u.username, p.created_at, p.updated_at
          FROM posts p
          JOIN users u ON p.user_id = u.id
-         WHERE p.id = ?"
+         WHERE p.id = ?",
     )
     .bind(id)
     .fetch_optional(&pool)
@@ -114,18 +151,20 @@ pub async fn get_post(
     .map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::new(format!("Database error: {}", e))),
+            Json(ErrorResponse::new(format!("Database error: {e}"))),
         )
     })?
-    .map(|(id, title, content, user_id, username, created_at, updated_at)| PostResponse {
-        id,
-        title,
-        content,
-        user_id,
-        username,
-        created_at,
-        updated_at,
-    })
+    .map(
+        |(id, title, content, user_id, username, created_at, updated_at)| PostResponse {
+            id,
+            title,
+            content,
+            user_id,
+            username,
+            created_at,
+            updated_at,
+        },
+    )
     .ok_or_else(|| {
         (
             StatusCode::NOT_FOUND,
@@ -145,7 +184,7 @@ pub async fn update_post(
     if let Err(errors) = payload.validate() {
         return Err((
             StatusCode::BAD_REQUEST,
-            Json(ErrorResponse::new(format!("Validation error: {}", errors))),
+            Json(ErrorResponse::new(format!("Validation error: {errors}"))),
         ));
     }
 
@@ -156,7 +195,7 @@ pub async fn update_post(
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse::new(format!("Database error: {}", e))),
+                Json(ErrorResponse::new(format!("Database error: {e}"))),
             )
         })?;
 
@@ -194,10 +233,7 @@ pub async fn update_post(
         has_content = true;
     }
 
-    let query = format!(
-        "UPDATE posts SET {} WHERE id = ?",
-        query_parts.join(", ")
-    );
+    let query = format!("UPDATE posts SET {} WHERE id = ?", query_parts.join(", "));
 
     let mut query_builder = sqlx::query(&query);
 
@@ -213,32 +249,45 @@ pub async fn update_post(
     query_builder.execute(&pool).await.map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::new(format!("Database error: {}", e))),
+            Json(ErrorResponse::new(format!("Database error: {e}"))),
         )
     })?;
 
-    let post: PostResponse = sqlx::query_as::<_, (i32, String, String, i32, String, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)>(
+    let post: PostResponse = sqlx::query_as::<
+        _,
+        (
+            i32,
+            String,
+            String,
+            i32,
+            String,
+            chrono::DateTime<chrono::Utc>,
+            chrono::DateTime<chrono::Utc>,
+        ),
+    >(
         "SELECT p.id, p.title, p.content, p.user_id, u.username, p.created_at, p.updated_at
          FROM posts p
          JOIN users u ON p.user_id = u.id
-         WHERE p.id = ?"
+         WHERE p.id = ?",
     )
     .bind(id)
     .fetch_one(&pool)
     .await
-    .map(|(id, title, content, user_id, username, created_at, updated_at)| PostResponse {
-        id,
-        title,
-        content,
-        user_id,
-        username,
-        created_at,
-        updated_at,
-    })
+    .map(
+        |(id, title, content, user_id, username, created_at, updated_at)| PostResponse {
+            id,
+            title,
+            content,
+            user_id,
+            username,
+            created_at,
+            updated_at,
+        },
+    )
     .map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::new(format!("Database error: {}", e))),
+            Json(ErrorResponse::new(format!("Database error: {e}"))),
         )
     })?;
 
@@ -257,7 +306,7 @@ pub async fn delete_post(
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse::new(format!("Database error: {}", e))),
+                Json(ErrorResponse::new(format!("Database error: {e}"))),
             )
         })?;
 
@@ -282,7 +331,7 @@ pub async fn delete_post(
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse::new(format!("Database error: {}", e))),
+                Json(ErrorResponse::new(format!("Database error: {e}"))),
             )
         })?;
 
