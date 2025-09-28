@@ -35,7 +35,12 @@ async fn main() {
         .route("/register", post(handlers::user_handler::register))
         .route("/login", post(handlers::user_handler::login))
         .route("/posts", get(handlers::post_handler::get_posts))
-        .route("/posts/:id", get(handlers::post_handler::get_post))
+        .route("/posts/:id", get(handlers::post_handler::get_post));
+
+    let protected_routes = Router::new()
+        .route("/posts", post(handlers::post_handler::create_post))
+        .route("/posts/:id", put(handlers::post_handler::update_post))
+        .route("/posts/:id", delete(handlers::post_handler::delete_post))
         .route(
             "/wallets/generate",
             post(handlers::wallet_handler::generate_wallets),
@@ -47,12 +52,7 @@ async fn main() {
         .route(
             "/contract/call",
             post(handlers::contract_handler::call_contract),
-        );
-
-    let protected_routes = Router::new()
-        .route("/posts", post(handlers::post_handler::create_post))
-        .route("/posts/:id", put(handlers::post_handler::update_post))
-        .route("/posts/:id", delete(handlers::post_handler::delete_post))
+        )
         .route_layer(middleware::from_fn_with_state(
             pool.clone(),
             auth::auth_middleware,
