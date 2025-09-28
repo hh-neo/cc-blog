@@ -20,7 +20,8 @@ async fn setup_test_server() -> TestServer {
         .route("/register", post(handlers::user_handler::register))
         .route("/login", post(handlers::user_handler::login))
         .route("/posts", get(handlers::post_handler::get_posts))
-        .route("/posts/:id", get(handlers::post_handler::get_post));
+        .route("/posts/:id", get(handlers::post_handler::get_post))
+        .route("/wallets/generate", post(handlers::wallet_handler::generate_wallets));
 
     let protected_routes = Router::new()
         .route("/posts", post(handlers::post_handler::create_post))
@@ -267,4 +268,159 @@ async fn test_delete_post() {
         .await;
 
     get_response.assert_status(StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_generate_single_wallet() {
+    let server = setup_test_server().await;
+
+    let response = server
+        .post("/wallets/generate")
+        .json(&json!({
+            "count": 1
+        }))
+        .await;
+
+    response.assert_status(StatusCode::OK);
+
+    let body: models::GenerateWalletsResponse = response.json();
+    assert_eq!(body.count, 1);
+    assert_eq!(body.wallets.len(), 1);
+
+    let wallet = &body.wallets[0];
+    assert!(wallet.address.starts_with("0x"));
+    assert_eq!(wallet.address.len(), 42);
+    assert_eq!(wallet.private_key.len(), 64);
+}
+
+#[tokio::test]
+async fn test_generate_multiple_wallets() {
+    let server = setup_test_server().await;
+
+    let response = server
+        .post("/wallets/generate")
+        .json(&json!({
+            "count": 5
+        }))
+        .await;
+
+    response.assert_status(StatusCode::OK);
+
+    let body: models::GenerateWalletsResponse = response.json();
+    assert_eq!(body.count, 5);
+    assert_eq!(body.wallets.len(), 5);
+
+    let mut addresses = std::collections::HashSet::new();
+    let mut private_keys = std::collections::HashSet::new();
+
+    for wallet in &body.wallets {
+        assert!(wallet.address.starts_with("0x"));
+        assert_eq!(wallet.address.len(), 42);
+        assert_eq!(wallet.private_key.len(), 64);
+
+        addresses.insert(wallet.address.clone());
+        private_keys.insert(wallet.private_key.clone());
+    }
+
+    assert_eq!(addresses.len(), 5);
+    assert_eq!(private_keys.len(), 5);
+}
+
+#[tokio::test]
+async fn test_generate_maximum_wallets() {
+    let server = setup_test_server().await;
+
+    let response = server
+        .post("/wallets/generate")
+        .json(&json!({
+            "count": 10000
+        }))
+        .await;
+
+    response.assert_status(StatusCode::OK);
+
+    let body: models::GenerateWalletsResponse = response.json();
+    assert_eq!(body.count, 10000);
+    assert_eq!(body.wallets.len(), 10000);
+}
+
+#[tokio::test]
+async fn test_generate_wallets_invalid_count_zero() {
+    let server = setup_test_server().await;
+
+    let response = server
+        .post("/wallets/generate")
+        .json(&json!({
+            "count": 0
+        }))
+        .await;
+
+    response.assert_status(StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_generate_wallets_invalid_count_too_large() {
+    let server = setup_test_server().await;
+
+    let response = server
+        .post("/wallets/generate")
+        .json(&json!({
+            "count": 10001
+        }))
+        .await;
+
+    response.assert_status(StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_generate_wallets_missing_count() {
+    let server = setup_test_server().await;
+
+    let response = server
+        .post("/wallets/generate")
+        .json(&json!({}))
+        .await;
+
+    response.assert_status(StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn test_wallet_address_format_validation() {
+    let server = setup_test_server().await;
+
+    let response = server
+        .post("/wallets/generate")
+        .json(&json!({
+            "count": 3
+        }))
+        .await;
+
+    response.assert_status(StatusCode::OK);
+
+    let body: models::GenerateWalletsResponse = response.json();
+
+    for wallet in &body.wallets {
+        let address_without_0x = &wallet.address[2..];
+        assert!(address_without_0x.chars().all(|c| c.is_ascii_hexdigit()));
+
+        assert!(wallet.private_key.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+}
+
+#[tokio::test]
+async fn test_generate_wallets_with_string_count() {
+    let server = setup_test_server().await;
+
+    let response = server
+        .post("/wallets/generate")
+        .json(&json!({
+            "count": "10"
+        }))
+        .await;
+
+    response.assert_status(StatusCode::OK);
+
+    let body: models::GenerateWalletsResponse = response.json();
+    assert_eq!(body.count, 10);
+    assert_eq!(body.wallets.len(), 10);
 }

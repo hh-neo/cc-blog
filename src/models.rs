@@ -103,3 +103,55 @@ impl ErrorResponse {
         }
     }
 }
+
+#[derive(Debug, Deserialize, Validate)]
+pub struct GenerateWalletsRequest {
+    #[serde(deserialize_with = "deserialize_number_from_string")]
+    #[validate(range(min = 1, max = 10000))]
+    pub count: u32,
+}
+
+fn deserialize_number_from_string<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de;
+
+    struct NumberFromString;
+
+    impl<'de> serde::de::Visitor<'de> for NumberFromString {
+        type Value = u32;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a number or a string containing a number")
+        }
+
+        fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            u32::try_from(value).map_err(de::Error::custom)
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            value.parse::<u32>().map_err(de::Error::custom)
+        }
+    }
+
+    deserializer.deserialize_any(NumberFromString)
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WalletInfo {
+    pub address: String,
+    pub private_key: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GenerateWalletsResponse {
+    pub count: u32,
+    pub wallets: Vec<WalletInfo>,
+}

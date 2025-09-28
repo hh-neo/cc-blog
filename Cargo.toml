@@ -18,6 +18,8 @@ dotenv = "0.15"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 validator = { version = "0.18", features = ["derive"] }
+ethers-core = "2.0"
+rand = "0.8"
 
 [dev-dependencies]
 axum-test = "15"
