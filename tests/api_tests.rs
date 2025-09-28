@@ -7,6 +7,7 @@ use axum::{
 use axum_test::TestServer;
 use blog_api::{auth, db, handlers, models};
 use serde_json::json;
+use uuid::Uuid;
 
 async fn setup_test_server() -> TestServer {
     dotenv::dotenv().ok();
@@ -42,7 +43,7 @@ async fn setup_test_server() -> TestServer {
 async fn test_register() {
     let server = setup_test_server().await;
 
-    let username = format!("testuser_{}", chrono::Utc::now().timestamp());
+    let username = format!("testuser_{}", Uuid::new_v4().to_string().replace("-", ""));
     let response = server
         .post("/register")
         .json(&json!({
@@ -63,7 +64,7 @@ async fn test_register() {
 async fn test_register_duplicate_username() {
     let server = setup_test_server().await;
 
-    let username = format!("testuser_{}", chrono::Utc::now().timestamp());
+    let username = format!("testuser_{}", Uuid::new_v4().to_string().replace("-", ""));
     server
         .post("/register")
         .json(&json!({
@@ -89,7 +90,7 @@ async fn test_register_duplicate_username() {
 async fn test_login() {
     let server = setup_test_server().await;
 
-    let username = format!("testuser_{}", chrono::Utc::now().timestamp());
+    let username = format!("testuser_{}", Uuid::new_v4().to_string().replace("-", ""));
     server
         .post("/register")
         .json(&json!({
@@ -133,7 +134,7 @@ async fn test_login_invalid_credentials() {
 async fn test_create_post() {
     let server = setup_test_server().await;
 
-    let username = format!("testuser_{}", chrono::Utc::now().timestamp());
+    let username = format!("testuser_{}", Uuid::new_v4().to_string().replace("-", ""));
     let register_response = server
         .post("/register")
         .json(&json!({
@@ -189,7 +190,7 @@ async fn test_get_posts() {
 async fn test_update_post() {
     let server = setup_test_server().await;
 
-    let username = format!("testuser_{}", chrono::Utc::now().timestamp());
+    let username = format!("testuser_{}", Uuid::new_v4().to_string().replace("-", ""));
     let register_response = server
         .post("/register")
         .json(&json!({
@@ -231,7 +232,7 @@ async fn test_update_post() {
 async fn test_delete_post() {
     let server = setup_test_server().await;
 
-    let username = format!("testuser_{}", chrono::Utc::now().timestamp());
+    let username = format!("testuser_{}", Uuid::new_v4().to_string().replace("-", ""));
     let register_response = server
         .post("/register")
         .json(&json!({

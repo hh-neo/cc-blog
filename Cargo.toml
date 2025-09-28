@@ -21,3 +21,4 @@ validator = { version = "0.18", features = ["derive"] }
 
 [dev-dependencies]
 axum-test = "15"
+uuid = { version = "1", features = ["v4"] }
