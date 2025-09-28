@@ -155,3 +155,37 @@ pub struct GenerateWalletsResponse {
     pub count: u32,
     pub wallets: Vec<WalletInfo>,
 }
+
+#[derive(Debug, Deserialize, Validate)]
+pub struct TransferRequest {
+    #[validate(length(min = 2, max = 20))]
+    pub chain: String,
+    #[validate(length(min = 64, max = 66))]
+    pub private_key: String,
+    #[validate(length(min = 1, max = 1000))]
+    pub transfers: Vec<TransferItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+pub struct TransferItem {
+    #[validate(length(min = 42, max = 42))]
+    pub to_address: String,
+    pub amount: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TransferResponse {
+    pub total: u32,
+    pub success: u32,
+    pub failed: u32,
+    pub results: Vec<TransferResult>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TransferResult {
+    pub to_address: String,
+    pub amount: String,
+    pub success: bool,
+    pub tx_hash: Option<String>,
+    pub error: Option<String>,
+}

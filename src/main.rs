@@ -36,7 +36,8 @@ async fn main() {
         .route("/login", post(handlers::user_handler::login))
         .route("/posts", get(handlers::post_handler::get_posts))
         .route("/posts/:id", get(handlers::post_handler::get_post))
-        .route("/wallets/generate", post(handlers::wallet_handler::generate_wallets));
+        .route("/wallets/generate", post(handlers::wallet_handler::generate_wallets))
+        .route("/transfer/batch", post(handlers::transfer_handler::batch_transfer));
 
     let protected_routes = Router::new()
         .route("/posts", post(handlers::post_handler::create_post))
