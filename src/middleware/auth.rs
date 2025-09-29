@@ -2,7 +2,7 @@ use axum::{
     extract::Request,
     http::{header, StatusCode},
     middleware::Next,
-    response::{IntoResponse, Response},
+    response::Response,
     Json,
 };
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
@@ -37,6 +37,7 @@ pub fn create_jwt(user_id: Uuid, username: &str, secret: &str) -> Result<String,
     )
 }
 
+#[allow(dead_code)]
 pub fn decode_jwt(token: &str, secret: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
     decode::<Claims>(
         token,
@@ -46,6 +47,7 @@ pub fn decode_jwt(token: &str, secret: &str) -> Result<Claims, jsonwebtoken::err
     .map(|data| data.claims)
 }
 
+#[allow(dead_code)]
 pub async fn auth_middleware(
     mut req: Request,
     next: Next,

@@ -41,10 +41,6 @@ cargo build
 # Option 1: Run all migrations at once
 psql -U postgres -d message_board -f migrations/init.sql
 
-# Option 2: Run individual migration files
-psql -U postgres -d message_board -f migrations/001_create_users.sql
-psql -U postgres -d message_board -f migrations/002_create_articles.sql
-
 # Option 3: If you have sqlx-cli installed:
 # cargo install sqlx-cli --no-default-features --features postgres
 # sqlx migrate run

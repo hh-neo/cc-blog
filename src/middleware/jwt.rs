@@ -13,6 +13,7 @@ use super::auth::Claims;
 
 pub struct JwtAuth {
     pub user_id: Uuid,
+    #[allow(dead_code)]
     pub username: String,
 }
 

@@ -1,6 +1,18 @@
--- Initialize database schema for message board
+-- ============================================
+-- Message Board Database Schema
+-- ============================================
+-- This file contains all database migrations merged into one
+-- Run this file to initialize the complete database schema
+--
+-- Usage:
+--   psql -U postgres -d message_board -f migrations/init.sql
+-- ============================================
 
--- Create users table
+-- ============================================
+-- Users Table (from 001_create_users.sql)
+-- ============================================
+
+-- Create users table for authentication and user management
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     username VARCHAR(50) UNIQUE NOT NULL,
@@ -10,11 +22,15 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Create index on username and email for faster lookups
+-- Create indexes on username and email for faster lookups during authentication
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
--- Create articles table
+-- ============================================
+-- Articles Table (from 002_create_articles.sql)
+-- ============================================
+
+-- Create articles table for blog posts/messages
 CREATE TABLE IF NOT EXISTS articles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -27,3 +43,7 @@ CREATE TABLE IF NOT EXISTS articles (
 -- Create indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_articles_user_id ON articles(user_id);
 CREATE INDEX IF NOT EXISTS idx_articles_created_at ON articles(created_at DESC);
+
+-- ============================================
+-- Migration Complete
+-- ============================================
