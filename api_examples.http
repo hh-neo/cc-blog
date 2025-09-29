@@ -1,0 +1,59 @@
+### Health Check
+GET http://localhost:8080/api/health
+
+### Register a new user
+POST http://localhost:8080/api/auth/register
+Content-Type: application/json
+
+{
+  "username": "testuser",
+  "email": "test@example.com",
+  "password": "testpass123"
+}
+
+### Login
+POST http://localhost:8080/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "testuser",
+  "password": "testpass123"
+}
+
+### Get current user (requires auth token)
+GET http://localhost:8080/api/auth/me
+Authorization: Bearer YOUR_JWT_TOKEN_HERE
+
+### Get all articles (public)
+GET http://localhost:8080/api/articles
+
+### Create a new article (requires auth token)
+POST http://localhost:8080/api/articles
+Authorization: Bearer YOUR_JWT_TOKEN_HERE
+Content-Type: application/json
+
+{
+  "title": "My First Article",
+  "content": "This is the content of my first article. It's about building a message board with Rust and PostgreSQL."
+}
+
+### Get a specific article (replace {id} with actual UUID)
+GET http://localhost:8080/api/articles/{id}
+
+### Update an article (requires auth token, only author can update)
+PUT http://localhost:8080/api/articles/{id}
+Authorization: Bearer YOUR_JWT_TOKEN_HERE
+Content-Type: application/json
+
+{
+  "title": "Updated Title",
+  "content": "Updated content for the article"
+}
+
+### Delete an article (requires auth token, only author can delete)
+DELETE http://localhost:8080/api/articles/{id}
+Authorization: Bearer YOUR_JWT_TOKEN_HERE
+
+### Get my articles (requires auth token)
+GET http://localhost:8080/api/articles/my
+Authorization: Bearer YOUR_JWT_TOKEN_HERE

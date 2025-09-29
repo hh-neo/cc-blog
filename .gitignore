@@ -1,18 +1,11 @@
 # Rust
-/target/
-**/*.rs.bk
+target/
 Cargo.lock
+**/*.rs.bk
 
 # Environment
 .env
 .env.local
-.env.*.local
-
-# SSL certificates
-ssl/
-*.pem
-*.key
-*.crt
 
 # IDE
 .idea/
@@ -20,23 +13,8 @@ ssl/
 *.swp
 *.swo
 *~
-
-# OS
 .DS_Store
-Thumbs.db
-
-# Logs
-*.log
-logs/
 
 # Database
-*.sql.bak
-mysql_data/
-
-# Testing
-test-results/
-coverage/
-
-# Added by cargo
-
-/target
+*.db
+*.sqlite
